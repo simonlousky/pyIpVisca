@@ -6,7 +6,7 @@ from ViscaProtocol import CameraMessageDecoder, SRG300
 
 class CameraConnection:
 
-    def __init__(self, cam_ip, cam_port):
+    def __init__(self, cam_ip="192.168.0.100", cam_port=52381):
         self.cam_ip = cam_ip
         self.cam_port = cam_port
         self.computer_ip = None
@@ -14,7 +14,7 @@ class CameraConnection:
 
         # Initialize the socket connection
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.connect((cam_ip, 52381))
+        self.sock.connect((cam_ip, cam_port))
         self.computer_ip = self.sock.getsockname()[0]
         self.sock.close()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -64,7 +64,7 @@ class CameraConnection:
             print("Network Error")
             return
         
-        print("Computer Ip: " + self.computer_ip)
+        print("Computer ip: " + self.computer_ip)
         print("Cam Port: " + str(self.cam_port))
         self.listening_socket.bind((self.computer_ip, int(self.cam_port)))
 

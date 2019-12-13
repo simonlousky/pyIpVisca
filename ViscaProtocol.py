@@ -97,9 +97,12 @@ class SRG300:
             speed_byte = struct.pack("B", int(speed))
         
             if command == "in":
-                return payload + b'\x2' + speed_byte + b'\xff'
+                # bitwise operation
+                zoom_byte = bytes([b'\x20'[0] | speed_byte[0]])
+                return payload + zoom_byte + b'\xff'
             elif command == "out":
-                return payload + b'\x3' + speed_byte + b'\xff'
+                zoom_byte = bytes([b'\x30'[0] | speed_byte[0]])
+                return payload + zoom_byte + b'\xff'
         
         return None
     
@@ -121,11 +124,9 @@ class SRG300:
         pan_val = struct.pack(">h", int(pan_pos))
         tilt_val = struct.pack(">h", int(tilt_pos))
 
-        payload = b'\x01\x06\x02\x18\x17' 
-        payload += pan_val[0] >> 4 + pan_val[0] & 0xf
-        payload += pan_val[1] >> 4 + pan_val[1] & 0xf
-        payload += tilt_val[0] >> 4 + tilt_val[0] & 0xf
-        payload += tilt_val[1] >> 4 + tilt_val[1] & 0xf
+        payload = bytearray(b'\x81\x01\x06\x02\x18\x17')
+        payload += bytearray([pan_val[0] >> 4, pan_val[0] & 0xf, pan_val[1] >> 4, pan_val[1] & 0xf])
+        payload += bytearray([tilt_val[0] >> 4, tilt_val[0] & 0xf, tilt_val[1] >> 4, tilt_val[1] & 0xf])
         payload += b'\xff'
 
         return payload
@@ -165,3 +166,20 @@ class CameraMessageDecoder:
             return Camera.visca_reply.get(payload)
 
         return "not_decrypted"
+
+if __name__ == "__main__":
+    def pprint(data):
+        print( ":".join("{:02x}".format(c) for c in data))
+    
+    cmd = SRG300.abs_position_cmd(-180,10)
+    pprint(cmd)
+    cmd = SRG300.abs_position_cmd(0.5, 5)
+    pprint(cmd)
+    cmd = SRG300.zoom_cmd("in")
+    pprint(cmd)
+    cmd = SRG300.zoom_cmd("out")
+    pprint(cmd)
+    cmd = SRG300.zoom_cmd("in", 0.5)
+    pprint(cmd)
+    cmd = SRG300.zoom_cmd("out", 0.5)
+    pprint(cmd)
