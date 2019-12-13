@@ -6,20 +6,20 @@ import struct
 class CameraConnection:
 
     def __init__(self, cam_ip, cam_port):
-        self.CamIP = cam_ip
-        self.CamPort = cam_port
-        self.ComputerIP = None
-        self.sequenceNo = 1
+        self.cam_ip = cam_ip
+        self.cam_port = cam_port
+        self.computer_ip = None
+        self.sequence_no = 1
 
         # Initialize the socket connection
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.connect((cam_ip, 52381))
-        self.ComputerIP = self.sock.getsockname()[0]
+        self.computer_ip = self.sock.getsockname()[0]
         self.sock.close()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         # Initialize listening connection
-        self.ListenSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.listening_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         self.q = multiprocessing.Queue()
         listen_process = multiprocessing.Process(target=self.listen_to_camera, args=(self.q,))
@@ -30,13 +30,13 @@ class CameraConnection:
     def send_command(self, cam_command):
         # Insert correct sequence number
         cam_command = bytearray(cam_command)
-        struct.pack_into(">I", cam_command, 4, self.sequenceNo)
+        struct.pack_into(">I", cam_command, 4, self.sequence_no)
 
         ack_received = False
         while not ack_received:
             # Send the command
-            struct.pack_into(">I", cam_command, 4, self.sequenceNo)
-            self.sock.sendto(cam_command, (self.CamIP, self.CamPort))
+            struct.pack_into(">I", cam_command, 4, self.sequence_no)
+            self.sock.sendto(cam_command, (self.cam_ip, self.cam_port))
             
             # Wait for the Camera timeout
             time.sleep(0.1)
@@ -62,22 +62,22 @@ class CameraConnection:
                 print("Camera Acknowledgement Timeout Reached")
                 print("Resending Command ")
                 
-        self.sequenceNo += 1
+        self.sequence_no += 1
 
     def listen_to_camera(self, q):
-        if self.ComputerIP is None:
+        if self.computer_ip is None:
             print("Network Error")
             return
         
-        print("Computer Ip: " + self.ComputerIP)
-        print("Cam Port: " + str(self.CamPort))
-        self.ListenSocket.bind((self.ComputerIP, int(self.CamPort)))
+        print("Computer Ip: " + self.computer_ip)
+        print("Cam Port: " + str(self.cam_port))
+        self.listening_socket.bind((self.computer_ip, int(self.cam_port)))
 
         # Start listening
         messages_from_cam = []
         while True:
             # grab any messages
-            data, addr = self.ListenSocket.recvfrom(1024)
+            data, addr = self.listening_socket.recvfrom(1024)
 
             # need to check if this message is from our camera
             msg = CameraMessagesData(data, addr)
