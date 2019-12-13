@@ -1,6 +1,6 @@
 import struct
 
-class ViscaOverIp:
+class ViscaOverIp(object):
     header_payload_type_range = (0,2)
     header_payload_length_range = (2,4)
     header_sequence_no_range = (4,8)
@@ -14,6 +14,28 @@ class ViscaOverIp:
         "control_command": b'\x02\x00',
         "control_reply": b'\x02\x01'
     }
+
+    @classmethod
+    def visca_command(cls, decorated): 
+        # Build   | 01 | 00 | ss | ss | ff | ff | ff | ff | payload |
+        #         |----------------header-----------------| payload |
+        def inner(*args, **kwargs): 
+            
+            # Get command payload
+            command_payload = decorated(*args, **kwargs) 
+            
+            # Add command type
+            cmd = cls.payload_type["visca_command"]
+            # Add payload length
+            cmd += struct.pack(">H", len(command_payload))
+            # Add arbitrary sequence number
+            cmd += b'\xff\xff\xff\xff'
+            # Add payload
+            cmd += command_payload
+
+            return bytearray(cmd)
+            
+        return inner
 
 class SRG300:
     '''
@@ -52,7 +74,8 @@ class SRG300:
     }
 
     @staticmethod
-    def zoom(command, speed=None):
+    @ViscaOverIp.visca_command
+    def zoom_cmd(command, speed=None):
         '''
         command: "in", "out", "stop"
         speed: float between 0 and 1, None means standard
@@ -79,25 +102,34 @@ class SRG300:
                 return payload + b'\x3' + speed_byte + b'\xff'
         
         return None
-            
-class CameraMessageEncoder:
-
+    
     @staticmethod
-    def visca_command(command, sequence_no, Camera):
-        '''
-        | payload type | payload length | seq no | payload |
-        ----------------------------------------------------
-        |      2B      |       2B       |   4B   |  1B-16B |  
-        '''
-        payload = Camera.command_payload.get(command)
-        if payload is None:
-            raise Exception("Wrong command")
+    @ViscaOverIp.visca_command
+    def abs_position_cmd(pan_pos=0, tilt_pos=0):
 
-        cmd = ViscaOverIp.payload_type["visca_command"]
-        cmd += struct.pack(">H", len(payload))
-        cmd += struct.pack(">I", sequence_no)
-        cmd += payload
+        # Limit position to pan in [-170, 170] and tilt in [-20, 90]
+        pan_pos = min(pan_pos, 170)
+        pan_pos = max(-170, pan_pos)
+        tilt_pos = min(tilt_pos, 90)
+        tilt_pos = max(-20, tilt_pos)
+        
+        # Convert degrees to camera steps
+        pan_pos *= 51.2
+        tilt_pos *= 51.2
 
+        # Encode steps to bytes
+        pan_val = struct.pack(">h", int(pan_pos))
+        tilt_val = struct.pack(">h", int(tilt_pos))
+
+        payload = b'\x01\x06\x02\x18\x17' 
+        payload += pan_val[0] >> 4 + pan_val[0] & 0xf
+        payload += pan_val[1] >> 4 + pan_val[1] & 0xf
+        payload += tilt_val[0] >> 4 + tilt_val[0] & 0xf
+        payload += tilt_val[1] >> 4 + tilt_val[1] & 0xf
+        payload += b'\xff'
+
+        return payload
+            
 class CameraMessageDecoder:
     def __init__(self, data, addr, Camera):
         self.data = data
