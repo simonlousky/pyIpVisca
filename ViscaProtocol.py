@@ -16,6 +16,17 @@ class ViscaOverIp(object):
     }
 
     @classmethod
+    def _command_suffix(cls, payload):
+        # Add payload length
+        cmd = struct.pack(">H", len(payload))
+        # Add arbitrary sequence number
+        cmd += b'\xff\xff\xff\xff'
+        # Add payload
+        cmd += payload
+        return cmd
+
+    # Decorator for visca commands
+    @classmethod
     def visca_command(cls, decorated): 
         # Build   | 01 | 00 | ss | ss | ff | ff | ff | ff | payload |
         #         |----------------header-----------------| payload |
@@ -23,15 +34,28 @@ class ViscaOverIp(object):
             
             # Get command payload
             command_payload = decorated(*args, **kwargs) 
-            
             # Add command type
             cmd = cls.payload_type["visca_command"]
-            # Add payload length
-            cmd += struct.pack(">H", len(command_payload))
-            # Add arbitrary sequence number
-            cmd += b'\xff\xff\xff\xff'
-            # Add payload
-            cmd += command_payload
+            # Add suffix
+            cmd += cls._command_suffix(command_payload)
+
+            return bytearray(cmd)
+            
+        return inner
+
+        # Decorator for visca commands
+    @classmethod
+    def control_command(cls, decorated): 
+        # Build   | 01 | 00 | ss | ss | ff | ff | ff | ff | payload |
+        #         |----------------header-----------------| payload |
+        def inner(*args, **kwargs): 
+            
+            # Get command payload
+            command_payload = decorated(*args, **kwargs) 
+            # Add command type
+            cmd = cls.payload_type["control_command"]
+            # Add suffix
+            cmd += cls._command_suffix(command_payload)
 
             return bytearray(cmd)
             
@@ -74,6 +98,21 @@ class SRG300:
     }
 
     @staticmethod
+    @ViscaOverIp.control_command
+    def reset_sequence_cmd():
+        return b'\x01'
+
+    @staticmethod
+    @ViscaOverIp.visca_command
+    def power_on_cmd():
+        return b'\x81\x01\x04\x07\x03\xff'
+
+    @staticmethod
+    @ViscaOverIp.visca_command
+    def power_off_cmd():
+        return b'\x81\x01\x04\x00\x03\xff'
+
+    @staticmethod
     @ViscaOverIp.visca_command
     def zoom_cmd(command, speed=None):
         '''
@@ -108,23 +147,86 @@ class SRG300:
     
     @staticmethod
     @ViscaOverIp.visca_command
-    def abs_position_cmd(pan_pos=0, tilt_pos=0):
+    def abs_position_cmd(pan_pos=0, tilt_pos=0, speed=1.0):
+        '''
+        pan_pos:    The wanted azimuth (right/left) relative to the camera's 0 direction
+                    Value is in degrees between -170 and 170
+        tilt_pos:   The wanted tilt (up/down) relative to the camera's 0 direction
+                    Value is in degrees between -20 and 90
+        speed:      The moving speed of the camera, between 0 and 1.0 (0 is slowest)
 
+        Currently suited only for non flipped image (camera sitting on a table)
+        '''
         # Limit position to pan in [-170, 170] and tilt in [-20, 90]
         pan_pos = min(pan_pos, 170)
         pan_pos = max(-170, pan_pos)
         tilt_pos = min(tilt_pos, 90)
         tilt_pos = max(-20, tilt_pos)
+        speed = min(speed, 1.0)
+        speed = max(0, speed)
         
         # Convert degrees to camera steps
         pan_pos *= 51.2
         tilt_pos *= 51.2
 
+        # Normalize speed to limit values
+        pan_speed = int(speed * 0x17) + 1
+        tilt_speed = int(speed * 0x16) + 1
+
+        # Base command
+        payload = bytearray(b'\x81\x01\x06\x02')
+
+        # Encode speeds to bytes
+        payload += struct.pack(">B", pan_speed)
+        payload += struct.pack(">B", tilt_speed)
+
         # Encode steps to bytes
         pan_val = struct.pack(">h", int(pan_pos))
         tilt_val = struct.pack(">h", int(tilt_pos))
+        payload += bytearray([pan_val[0] >> 4, pan_val[0] & 0xf, pan_val[1] >> 4, pan_val[1] & 0xf])
+        payload += bytearray([tilt_val[0] >> 4, tilt_val[0] & 0xf, tilt_val[1] >> 4, tilt_val[1] & 0xf])
+        payload += b'\xff'
 
-        payload = bytearray(b'\x81\x01\x06\x02\x18\x17')
+        return payload
+
+    @staticmethod
+    @ViscaOverIp.visca_command
+    def relative_position_cmd(pan_pos=0, tilt_pos=0, speed=1.0):
+        '''
+        pan_pos:    The wanted azimuth (right/left) relative to the camera's current direction
+                    Value is in degrees between -170 and 170
+        tilt_pos:   The wanted tilt (up/down) relative to the camera's current direction
+                    Value is in degrees between -20 and 90
+        speed:      The moving speed of the camera, between 0 and 1.0 (0 is slowest)
+
+        Currently suited only for non flipped image (camera sitting on a table)
+        '''
+        # Limit position to pan in [-170, 170] and tilt in [-20, 90]
+        pan_pos = min(pan_pos, 170)
+        pan_pos = max(-170, pan_pos)
+        tilt_pos = min(tilt_pos, 90)
+        tilt_pos = max(-20, tilt_pos)
+        speed = min(speed, 1.0)
+        speed = max(0, speed)
+        
+        # Convert degrees to camera steps
+        pan_pos *= 51.2
+        tilt_pos *= 51.2
+
+        # Normalize speed to limit values
+        pan_speed = int(speed * 0x17) + 1
+        tilt_speed = int(speed * 0x16) + 1
+
+        # Base command
+        payload = bytearray(b'\x81\x01\x06\x03')
+
+        # Encode speeds to bytes
+        payload += struct.pack(">B", pan_speed)
+        payload += struct.pack(">B", tilt_speed)
+
+        # Encode steps to bytes
+        pan_val = struct.pack(">h", int(pan_pos))
+        tilt_val = struct.pack(">h", int(tilt_pos))
         payload += bytearray([pan_val[0] >> 4, pan_val[0] & 0xf, pan_val[1] >> 4, pan_val[1] & 0xf])
         payload += bytearray([tilt_val[0] >> 4, tilt_val[0] & 0xf, tilt_val[1] >> 4, tilt_val[1] & 0xf])
         payload += b'\xff'
