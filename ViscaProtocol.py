@@ -277,6 +277,8 @@ if __name__ == "__main__":
     pprint(cmd)
     cmd = SRG300.abs_position_cmd(0.5, 5)
     pprint(cmd)
+    cmd = SRG300.relative_position_cmd(10, 10, 0.5)
+    pprint(cmd)
     cmd = SRG300.zoom_cmd("in")
     pprint(cmd)
     cmd = SRG300.zoom_cmd("out")
