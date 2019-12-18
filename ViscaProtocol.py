@@ -38,7 +38,6 @@ class ViscaOverIp(object):
             cmd = cls.payload_type["visca_command"]
             # Add suffix
             cmd += cls._command_suffix(command_payload)
-            print("end of decorator: ", cmd)
             return cmd
             
         return inner
