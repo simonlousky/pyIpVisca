@@ -38,8 +38,7 @@ class ViscaOverIp(object):
             cmd = cls.payload_type["visca_command"]
             # Add suffix
             cmd += cls._command_suffix(command_payload)
-
-            return bytearray(cmd)
+            return cmd
             
         return inner
 
@@ -76,9 +75,6 @@ class SRG300:
         "go_preset2": b'\x81\x01\x04\x3F\x02\x01\xff',
         "go_preset3": b'\x81\x01\x04\x3F\x02\x02\xff',
         "go_preset4": b'\x81\x01\x04\x3F\x02\x03\xff'
-        # move
-
-        # zoom
     }
     
     control_payloads = {
@@ -87,14 +83,21 @@ class SRG300:
 
     # Outgoing
     control_reply = {
-        b'\x01': "Acknowledge",
+        b'\x01': "Acknowledge"
+    }
+
+    control_command = {
         b'\x0f\x01': "Sequence Abnormality",
         b'\x0f\x02': "Message Abnormality"
     }
 
-    command_reply = {
+    visca_reply = {
         b'\x90\x41\xff': "Acknowledge",
-        b'\x90\x51\xff': "Completion"
+        b'\x90\x42\xff': "Acknowledge",
+        b'\x90\x51\xff': "Completion",
+        b'\x90\x52\xff': "Completion",
+        b'\x90\x62\x41\xff': "Impossible",
+        b'\x90\x62\x41\xff': "Impossible",
     }
 
     @staticmethod
@@ -183,10 +186,42 @@ class SRG300:
         # Encode steps to bytes
         pan_val = struct.pack(">h", int(pan_pos))
         tilt_val = struct.pack(">h", int(tilt_pos))
-        payload += bytearray([pan_val[0] >> 4, pan_val[0] & 0xf, pan_val[1] >> 4, pan_val[1] & 0xf])
-        payload += bytearray([tilt_val[0] >> 4, tilt_val[0] & 0xf, tilt_val[1] >> 4, tilt_val[1] & 0xf])
+        payload += bytes([pan_val[0] >> 4, pan_val[0] & 0xf, pan_val[1] >> 4, pan_val[1] & 0xf])
+        payload += bytes([tilt_val[0] >> 4, tilt_val[0] & 0xf, tilt_val[1] >> 4, tilt_val[1] & 0xf])
         payload += b'\xff'
 
+        return payload
+
+    @staticmethod
+    @ViscaOverIp.visca_command
+    def pan_tilt_cmd(direction, speed=0):
+        '''
+        command: "right", "left", "stop"
+        speed: float between 0 and 1, None means standard
+        '''
+        payload = b'\x81\x01\x06\x01'
+        
+        # Normalize speed to limit values
+        pan_speed = int(speed * 0x17) + 1
+        tilt_speed = int(speed * 0x16) + 1
+
+        # Encode speeds to bytes
+        payload += struct.pack(">B", pan_speed)
+        payload += struct.pack(">B", tilt_speed)
+
+        if direction == "left":
+            payload += b'\x01\x03\xff'
+        elif direction == "right":
+            payload += b'\x02\x03\xff'
+        elif direction == "up":
+            payload += b'\x03\x01\xff'
+        elif direction == "down":
+            payload += b'\x03\x02\xff'
+        elif direction == "stop":
+            payload += b'\x03\x03\xff'
+        else:
+            raise Exception("Wrong command")
+        
         return payload
 
     @staticmethod
@@ -204,8 +239,8 @@ class SRG300:
         # Limit position to pan in [-170, 170] and tilt in [-20, 90]
         pan_pos = min(pan_pos, 170)
         pan_pos = max(-170, pan_pos)
-        tilt_pos = min(tilt_pos, 90)
-        tilt_pos = max(-20, tilt_pos)
+        tilt_pos = min(tilt_pos, 20)
+        tilt_pos = max(-90, tilt_pos)
         speed = min(speed, 1.0)
         speed = max(0, speed)
         
@@ -227,10 +262,12 @@ class SRG300:
         # Encode steps to bytes
         pan_val = struct.pack(">h", int(pan_pos))
         tilt_val = struct.pack(">h", int(tilt_pos))
-        payload += bytearray([pan_val[0] >> 4, pan_val[0] & 0xf, pan_val[1] >> 4, pan_val[1] & 0xf])
-        payload += bytearray([tilt_val[0] >> 4, tilt_val[0] & 0xf, tilt_val[1] >> 4, tilt_val[1] & 0xf])
+        print("pan_val: ", pan_val)
+        payload += bytes([pan_val[0] >> 4, pan_val[0] & 0xf, pan_val[1] >> 4, pan_val[1] & 0xf])
+        payload += bytes([tilt_val[0] >> 4, tilt_val[0] & 0xf, tilt_val[1] >> 4, tilt_val[1] & 0xf])
         payload += b'\xff'
 
+        print("relative: ", payload)
         return payload
             
 class CameraMessageDecoder:
@@ -260,12 +297,13 @@ class CameraMessageDecoder:
     def decrypt_payload(data, Camera):
         length = CameraMessageDecoder.decrypt_length(data)
         command_type = CameraMessageDecoder.decrypt_sequence_type(data)
-        payload = data[ViscaOverIp.payload_start:-1]
-
+        payload = data[ViscaOverIp.payload_start:]
         if command_type == "control_reply":
             return Camera.control_reply.get(payload)
         elif command_type == "visca_reply":
             return Camera.visca_reply.get(payload)
+        elif command_type == "control_command":
+            return Camera.control_command.get(payload)
 
         return "not_decrypted"
 
