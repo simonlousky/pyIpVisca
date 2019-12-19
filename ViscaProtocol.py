@@ -64,18 +64,6 @@ class SRG300:
     '''
     Command reference for Sony SRG-300h
     '''
-    # Incoming
-    command_payloads = {
-        "power_on": b'\x81\x01\x04\x00\x02\xff',
-        "power_off": b'\x81\x01\x04\x00\x03\xff',
-        
-        # go
-        "go_home": b'\x81\x01\x06\x04\xff',
-        "go_preset1": b'\x81\x01\x04\x3F\x02\x00\xff',
-        "go_preset2": b'\x81\x01\x04\x3F\x02\x01\xff',
-        "go_preset3": b'\x81\x01\x04\x3F\x02\x02\xff',
-        "go_preset4": b'\x81\x01\x04\x3F\x02\x03\xff'
-    }
     
     control_payloads = {
         "reset_sequence": b'\x01'
@@ -108,12 +96,17 @@ class SRG300:
     @staticmethod
     @ViscaOverIp.visca_command
     def power_on_cmd():
-        return b'\x81\x01\x04\x07\x03\xff'
+        return b'\x81\x01\x04\x00\x02\xff'
 
     @staticmethod
     @ViscaOverIp.visca_command
     def power_off_cmd():
         return b'\x81\x01\x04\x00\x03\xff'
+
+    @staticmethod
+    @ViscaOverIp.visca_command
+    def go_home_cmd():
+        return b'\x81\x01\x06\x04\xff'
 
     @staticmethod
     @ViscaOverIp.visca_command
@@ -269,7 +262,68 @@ class SRG300:
 
         print("relative: ", payload)
         return payload
-            
+
+class SRG360:
+    '''
+    Command reference for Sony SRG-360
+    '''
+
+    # Incoming
+    go_commands = {
+        "home": b'\x81\x01\x06\x04\xff',
+        "preset1": b'\x81\x01\x04\x3F\x02\x00\xff',
+        "preset2": b'\x81\x01\x04\x3F\x02\x01\xff',
+        "preset3": b'\x81\x01\x04\x3F\x02\x02\xff',
+        "preset4": b'\x81\x01\x04\x3F\x02\x03\xff'
+    }
+    
+    control_payloads = {
+        "reset_sequence": b'\x01'
+    }
+
+    # Outgoing
+    control_reply = {
+        b'\x01': "Acknowledge"
+    }
+
+    control_command = {
+        b'\x0f\x01': "Sequence Abnormality",
+        b'\x0f\x02': "Message Abnormality"
+    }
+
+    visca_reply = {
+        b'\x90\x41\xff': "Acknowledge",
+        b'\x90\x42\xff': "Acknowledge",
+        b'\x90\x51\xff': "Completion",
+        b'\x90\x52\xff': "Completion",
+        b'\x90\x61\x41\xff': "Impossible",
+        b'\x90\x62\x41\xff': "Impossible",
+    }
+
+
+    @staticmethod
+    @ViscaOverIp.control_command
+    def reset_sequence_cmd():
+        return b'\x01'
+
+    @staticmethod
+    @ViscaOverIp.visca_command
+    def power_on_cmd():
+        return b'\x81\x01\x04\x00\x02\xff'
+
+    @staticmethod
+    @ViscaOverIp.visca_command
+    def power_off_cmd():
+        return b'\x81\x01\x04\x00\x03\xff'
+
+    @staticmethod
+    @ViscaOverIp.visca_command
+    def go_to_cmd(preset):
+        """
+        preset: "home", "preset1", "preset2", "preset3", "preset4"
+        """
+        return SRG360.go_commands[preset]
+
 class CameraMessageDecoder:
     def __init__(self, data, addr, Camera):
         self.data = data
@@ -295,7 +349,7 @@ class CameraMessageDecoder:
 
     @staticmethod
     def decrypt_payload(data, Camera):
-        length = CameraMessageDecoder.decrypt_length(data)
+        # length = CameraMessageDecoder.decrypt_length(data)
         command_type = CameraMessageDecoder.decrypt_sequence_type(data)
         payload = data[ViscaOverIp.payload_start:]
         if command_type == "control_reply":
